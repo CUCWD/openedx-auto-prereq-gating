@@ -1,3 +1,5 @@
+"""Django application configuration for Auto Prerequisite Gating."""
+
 from django.apps import AppConfig
 
 

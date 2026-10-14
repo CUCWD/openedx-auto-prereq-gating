@@ -1,3 +1,5 @@
+"""CMS routes for Auto Prerequisite Gating."""
+
 from django.urls import path
 
 from .views import configure_gating

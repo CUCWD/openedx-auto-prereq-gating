@@ -6,20 +6,24 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
-from opaque_keys import InvalidKeyError
-from opaque_keys.edx.keys import CourseKey
-
-from common.djangoapps.student.auth import has_studio_write_access
-from xmodule.modulestore.django import modulestore
-from xmodule.modulestore.exceptions import ItemNotFoundError
-
-from .gating import GatingConfigurationError, configure_sequential_prerequisites
 
 
 @login_required
 @require_POST
 def configure_gating(request):
     """Configure 100% completion gating across a course's ordered subsections."""
+    # pylint: disable=import-outside-toplevel
+    # These imports are provided by edx-platform, the host application. Keeping
+    # them inside the request handler lets standalone Django checks and docs
+    # load this plugin package without importing the full platform.
+    from common.djangoapps.student.auth import has_studio_write_access
+    from opaque_keys import InvalidKeyError
+    from opaque_keys.edx.keys import CourseKey
+    from xmodule.modulestore.django import modulestore
+    from xmodule.modulestore.exceptions import ItemNotFoundError
+
+    from .gating import GatingConfigurationError, configure_sequential_prerequisites
+
     try:
         payload = json.loads(request.body)
     except (TypeError, UnicodeDecodeError, json.JSONDecodeError):

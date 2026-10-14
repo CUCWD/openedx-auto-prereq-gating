@@ -9,3 +9,11 @@ disable+=
     django-not-configured,
     consider-using-with,
     bad-option-value,
+
+[TYPECHECK]
+ignored-modules=
+    common.djangoapps.student.auth,
+    opaque_keys,
+    openedx.core.lib.gating.api,
+    xmodule.modulestore.django,
+    xmodule.modulestore.exceptions

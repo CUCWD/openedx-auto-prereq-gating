@@ -69,6 +69,15 @@ extensions = [
     'sphinx.ext.napoleon'
 ]
 
+# These modules are supplied by the edx-platform host application.
+autodoc_mock_imports = [
+    'common.djangoapps.student.auth',
+    'opaque_keys',
+    'openedx',
+    'xmodule.modulestore.django',
+    'xmodule.modulestore.exceptions',
+]
+
 # A list of warning types to suppress arbitrary warning messages.
 suppress_warnings = [
     'image.nonlocal_uri',

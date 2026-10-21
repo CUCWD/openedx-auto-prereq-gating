@@ -12,7 +12,6 @@ from django.urls import reverse
 
 from auto_prereq_gating import gating
 
-
 pytestmark = pytest.mark.django_db
 
 COURSE_ID = "course-v1:org+course+run"

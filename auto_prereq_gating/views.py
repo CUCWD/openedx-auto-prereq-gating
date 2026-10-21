@@ -69,7 +69,7 @@ def configure_gating(request):
 @require_POST
 def setup_gating_view(request, course_id):
     """Set up sequential prerequisite gating for a course."""
-    # pylint: disable=import-outside-toplevel, import-error
+    # pylint: disable=import-outside-toplevel
     # These imports are provided by edx-platform, the host application.
     from common.djangoapps.student.auth import has_course_author_access
     from opaque_keys import InvalidKeyError

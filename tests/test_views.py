@@ -46,8 +46,17 @@ def platform_api(monkeypatch):
         return course_id
 
     keys.CourseKey = SimpleNamespace(from_string=parse_course_key)
-    for module in (common, djangoapps, student, auth, opaque_keys, opaque_edx, keys):
-        monkeypatch.setitem(sys.modules, module.__name__, module)
+    modules = (
+        ("common", common),
+        ("common.djangoapps", djangoapps),
+        ("common.djangoapps.student", student),
+        ("common.djangoapps.student.auth", auth),
+        ("opaque_keys", opaque_keys),
+        ("opaque_keys.edx", opaque_edx),
+        ("opaque_keys.edx.keys", keys),
+    )
+    for name, module in modules:
+        monkeypatch.setitem(sys.modules, name, module)
     return {"has_course_author_access": has_course_author_access}
 
 

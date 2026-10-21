@@ -1,11 +1,14 @@
 """CMS views for automatic prerequisite gating."""
 
 import json
+import logging
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
+
+log = logging.getLogger(__name__)
 
 
 @login_required
@@ -59,4 +62,45 @@ def configure_gating(request):
         "subsections_found": total,
         "gates_configured": configured,
         "min_completion": 100,
+    })
+
+
+@login_required
+@require_POST
+def setup_gating_view(request, course_id):
+    """Set up sequential prerequisite gating for a course."""
+    # pylint: disable=import-outside-toplevel
+    # These imports are provided by edx-platform, the host application.
+    from common.djangoapps.student.auth import has_course_author_access
+    from opaque_keys import InvalidKeyError
+    from opaque_keys.edx.keys import CourseKey
+
+    from .gating import setup_sequential_gating
+
+    try:
+        course_key = CourseKey.from_string(course_id)
+    except InvalidKeyError:
+        return JsonResponse({"error": "Invalid course ID."}, status=400)
+
+    if not has_course_author_access(request.user, course_key):
+        return JsonResponse(
+            {"error": "You do not have author access to this course."},
+            status=403,
+        )
+
+    try:
+        result = setup_sequential_gating(course_key, request.user)
+    except ValueError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+    except Exception:  # pylint: disable=broad-exception-caught
+        log.exception("Unexpected error in auto-gating setup for %s", course_id)
+        return JsonResponse(
+            {"error": "An unexpected error occurred. Check server logs."},
+            status=500,
+        )
+
+    return JsonResponse({
+        "success": True,
+        "total_subsections": result["total"],
+        "gating_configured": result["gated"],
     })

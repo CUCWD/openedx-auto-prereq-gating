@@ -4,11 +4,13 @@
 # pylint: disable=redefined-outer-name, unused-argument
 
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 from django.urls import reverse
+
+from auto_prereq_gating import gating
 
 
 pytestmark = pytest.mark.django_db
@@ -26,7 +28,8 @@ def platform_api(monkeypatch):
     student = ModuleType("common.djangoapps.student")
     student.__path__ = []
     auth = ModuleType("common.djangoapps.student.auth")
-    auth.has_course_author_access = Mock(return_value=True)
+    has_course_author_access = Mock(return_value=True)
+    auth.has_course_author_access = has_course_author_access
 
     invalid_key_error = type("InvalidKeyError", (Exception,), {})
     opaque_keys = ModuleType("opaque_keys")
@@ -36,19 +39,16 @@ def platform_api(monkeypatch):
     opaque_edx.__path__ = []
     keys = ModuleType("opaque_keys.edx.keys")
 
-    class CourseKey:
-        """Minimal course-key parser for endpoint tests."""
+    def parse_course_key(course_id):
+        """Parse a course key or raise the platform's invalid-key error."""
+        if not course_id.startswith("course-v1:"):
+            raise invalid_key_error(course_id)
+        return course_id
 
-        @staticmethod
-        def from_string(course_id):
-            if not course_id.startswith("course-v1:"):
-                raise invalid_key_error(course_id)
-            return course_id
-
-    keys.CourseKey = CourseKey
+    keys.CourseKey = SimpleNamespace(from_string=parse_course_key)
     for module in (common, djangoapps, student, auth, opaque_keys, opaque_edx, keys):
         monkeypatch.setitem(sys.modules, module.__name__, module)
-    return auth
+    return {"has_course_author_access": has_course_author_access}
 
 
 @pytest.fixture
@@ -84,7 +84,7 @@ def test_unauthenticated_post_redirects_to_login(platform_api, client):
 def test_missing_author_access_returns_json_403(platform_api, authenticated_author):
     """Return a JSON forbidden response when the caller cannot author the course."""
     client, _ = authenticated_author
-    platform_api.has_course_author_access.return_value = False
+    platform_api["has_course_author_access"].return_value = False
 
     response = client.post(setup_url())
 
@@ -106,8 +106,6 @@ def test_gating_disabled_returns_advanced_settings_message(
     platform_api, authenticated_author, monkeypatch
 ):
     """Return the service's validation message when gating is disabled."""
-    from auto_prereq_gating import gating
-
     client, _ = authenticated_author
     message = "Subsection Prerequisites must be enabled in Advanced Settings."
     setup = Mock(side_effect=ValueError(message))
@@ -123,8 +121,6 @@ def test_success_returns_total_and_gated_counts(
     platform_api, authenticated_author, monkeypatch
 ):
     """Return success and counts from the gating service."""
-    from auto_prereq_gating import gating
-
     client, user = authenticated_author
     setup = Mock(return_value={"total": 12, "gated": 11})
     monkeypatch.setattr(gating, "setup_sequential_gating", setup)
@@ -144,8 +140,6 @@ def test_unexpected_service_error_is_logged_and_returns_json_500(
     platform_api, authenticated_author, monkeypatch
 ):
     """Log unexpected service errors and return JSON rather than a traceback."""
-    from auto_prereq_gating import gating
-
     client, _ = authenticated_author
     setup = Mock(side_effect=RuntimeError("unexpected failure"))
     monkeypatch.setattr(gating, "setup_sequential_gating", setup)

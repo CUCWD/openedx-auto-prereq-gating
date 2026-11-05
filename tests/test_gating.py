@@ -108,6 +108,7 @@ def test_gating_must_be_enabled(modulestore_modules):
     store.update_item.assert_not_called()
 
 
+@pytest.mark.django_db
 def test_single_subsection_rejected(modulestore_modules):
     """A course needs at least two subsections for a chain."""
     course = make_course([make_subsection("only")])

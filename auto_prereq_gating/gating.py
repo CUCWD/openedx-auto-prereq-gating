@@ -62,9 +62,6 @@ def configure_sequential_prerequisites(course_key, course):
     Existing prerequisite requirements on these subsections are replaced by
     the sequential chain. A subsection with no predecessor is left ungated.
     """
-    # pylint: disable=import-outside-toplevel
-    from openedx.core.lib.gating.api import add_prerequisite, is_prerequisite, set_required_content
-
     if not course.enable_subsection_gating:
         raise GatingConfigurationError(
             "Enable subsection gating in the course's Advanced Settings first."
@@ -75,6 +72,9 @@ def configure_sequential_prerequisites(course_key, course):
         raise GatingConfigurationError(
             "The course needs at least two subsections to configure sequential gating."
         )
+
+    # pylint: disable=import-outside-toplevel
+    from openedx.core.lib.gating.api import add_prerequisite, is_prerequisite, set_required_content
 
     # Remove any prior gate from the first subsection: it has no predecessor.
     set_required_content(course_key, str(subsections[0].location), None)

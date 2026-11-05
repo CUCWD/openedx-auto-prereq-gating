@@ -7,11 +7,13 @@ def setup_sequential_gating(course_key, user):
     """Wire prerequisite gating across every subsection in course order.
 
     Each subsection after the first requires 100% completion of its immediate
-    predecessor and a minimum score of 0%. Changes are written to the draft
-    branch so they are visible in Studio before publishing.
+    predecessor and a minimum score of 0%. Gating relationships are saved
+    using the platform's milestone-backed gating API.
 
     Returns a mapping with the number of subsections found and gated.
     """
+    # The caller checks author access before invoking this service.
+    del user
     # Import from edx-platform only when this service is called, so the package
     # remains importable in standalone Django environments.
     # pylint: disable=import-outside-toplevel, import-error
@@ -32,22 +34,11 @@ def setup_sequential_gating(course_key, user):
                     "before auto-gating can be configured."
                 )
 
-            subsections = get_ordered_subsections(course)
-            if len(subsections) < 2:
-                return {"total": len(subsections), "gated": 0}
-
-            with store.bulk_operations(course_key):
-                for index, subsection in enumerate(subsections):
-                    subsection.prereq = (
-                        str(subsections[index - 1].location) if index else ""
-                    )
-                    subsection.prereq_min_score = 0
-                    subsection.prereq_min_completion = 100
-                    store.update_item(subsection, user.id)
+            total, gated = configure_sequential_prerequisites(course_key, course)
     except ItemNotFoundError as error:
         raise ValueError(f"Course not found: {course_key}") from error
 
-    return {"total": len(subsections), "gated": len(subsections) - 1}
+    return {"total": total, "gated": gated}
 
 
 class GatingConfigurationError(ValueError):
@@ -71,9 +62,6 @@ def configure_sequential_prerequisites(course_key, course):
     Existing prerequisite requirements on these subsections are replaced by
     the sequential chain. A subsection with no predecessor is left ungated.
     """
-    # pylint: disable=import-outside-toplevel
-    from openedx.core.lib.gating.api import add_prerequisite, is_prerequisite, set_required_content
-
     if not course.enable_subsection_gating:
         raise GatingConfigurationError(
             "Enable subsection gating in the course's Advanced Settings first."
@@ -85,16 +73,20 @@ def configure_sequential_prerequisites(course_key, course):
             "The course needs at least two subsections to configure sequential gating."
         )
 
+    # pylint: disable=import-outside-toplevel
+    from openedx.core.lib.gating.api import add_prerequisite, is_prerequisite, set_required_content
+
     # Remove any prior gate from the first subsection: it has no predecessor.
-    set_required_content(course_key, subsections[0].location, None)
+    set_required_content(course_key, str(subsections[0].location), None)
 
     for previous, current in zip(subsections, subsections[1:]):
-        if not is_prerequisite(course_key, previous.location):
-            add_prerequisite(course_key, previous.location)
+        previous_key = str(previous.location)
+        if not is_prerequisite(course_key, previous_key):
+            add_prerequisite(course_key, previous_key)
         set_required_content(
             course_key,
-            current.location,
-            previous.location,
+            str(current.location),
+            previous_key,
             min_score=0,
             min_completion=100,
         )

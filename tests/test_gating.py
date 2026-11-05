@@ -5,7 +5,7 @@
 
 from contextlib import nullcontext
 from types import ModuleType, SimpleNamespace
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -48,11 +48,21 @@ def make_course(*subsection_groups, enabled=True):
 def make_subsection(name):
     return SimpleNamespace(
         category="sequential",
-        location=f"block-v1:org+course+run+type@sequential+block@{name}",
+        location=BlockLocation(name),
         prereq="existing-prerequisite",
         prereq_min_score=50,
         prereq_min_completion=50,
     )
+
+
+class BlockLocation:
+    """Stand in for an opaque block locator, which is not a string."""
+
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return f"block-v1:org+course+run+type@sequential+block@{self.name}"
 
 
 def configure_store(modulestore_modules, course):
@@ -98,41 +108,35 @@ def test_gating_must_be_enabled(modulestore_modules):
     store.update_item.assert_not_called()
 
 
-def test_single_subsection_returns_without_writes(modulestore_modules):
-    """Avoid updates when there is only one subsection."""
+@pytest.mark.django_db
+def test_single_subsection_rejected(modulestore_modules):
+    """A course needs at least two subsections for a chain."""
     course = make_course([make_subsection("only")])
     store, user = configure_store(modulestore_modules, course)
 
-    assert setup_sequential_gating("course-v1:org+course+run", user) == {
-        "total": 1,
-        "gated": 0,
-    }
+    with pytest.raises(ValueError, match="at least two subsections"):
+        setup_sequential_gating("course-v1:org+course+run", user)
 
     store.update_item.assert_not_called()
     store.bulk_operations.assert_not_called()
 
 
-def test_subsections_are_gated_in_flattened_course_order(modulestore_modules):
-    """Write each predecessor relationship in flattened course order."""
+def test_setup_uses_gating_service(modulestore_modules, monkeypatch):
+    """The button endpoint uses the milestone-backed gating service."""
     first, second, third = (make_subsection(name) for name in ("first", "second", "third"))
     course = make_course([first, second], [third])
     store, user = configure_store(modulestore_modules, course)
     course_key = "course-v1:org+course+run"
     branch, _, _ = modulestore_modules
+    configure = MagicMock(return_value=(3, 2))
+    monkeypatch.setattr("auto_prereq_gating.gating.configure_sequential_prerequisites", configure)
 
     assert setup_sequential_gating(course_key, user) == {"total": 3, "gated": 2}
 
     store.branch_setting.assert_called_once_with(branch, course_key)
     store.get_course.assert_called_once_with(course_key, depth=2)
-    store.bulk_operations.assert_called_once_with(course_key)
-    store.update_item.assert_has_calls(
-        [call(first, user.id), call(second, user.id), call(third, user.id)]
-    )
-    assert first.prereq == ""
-    for subsection, previous in ((second, first), (third, second)):
-        assert subsection.prereq == str(previous.location)
-        assert subsection.prereq_min_score == 0
-        assert subsection.prereq_min_completion == 100
+    configure.assert_called_once_with(course_key, course)
+    store.update_item.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -161,12 +165,12 @@ def test_configure_sequential_prerequisites_uses_openedx_gating_api(monkeypatch)
 
     assert configure_sequential_prerequisites(course_key, course) == (2, 1)
 
-    api_module.set_required_content.assert_any_call(course_key, first.location, None)
-    api_module.add_prerequisite.assert_called_once_with(course_key, first.location)
+    api_module.set_required_content.assert_any_call(course_key, str(first.location), None)
+    api_module.add_prerequisite.assert_called_once_with(course_key, str(first.location))
     api_module.set_required_content.assert_any_call(
         course_key,
-        second.location,
-        first.location,
+        str(second.location),
+        str(first.location),
         min_score=0,
         min_completion=100,
     )

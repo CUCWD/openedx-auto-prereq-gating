@@ -135,7 +135,7 @@ def test_setup_uses_gating_service(modulestore_modules, monkeypatch):
 
     store.branch_setting.assert_called_once_with(branch, course_key)
     store.get_course.assert_called_once_with(course_key, depth=2)
-    configure.assert_called_once_with(course_key, course)
+    configure.assert_called_once_with(course_key, course, 100, 0)
     store.update_item.assert_not_called()
 
 
@@ -163,7 +163,7 @@ def test_configure_sequential_prerequisites_uses_openedx_gating_api(monkeypatch)
     course = make_course([first, second])
     course_key = "course-v1:org+course+run"
 
-    assert configure_sequential_prerequisites(course_key, course) == (2, 1)
+    assert configure_sequential_prerequisites(course_key, course, 75, 80) == (2, 1)
 
     api_module.set_required_content.assert_any_call(course_key, str(first.location), None)
     api_module.add_prerequisite.assert_called_once_with(course_key, str(first.location))
@@ -171,6 +171,6 @@ def test_configure_sequential_prerequisites_uses_openedx_gating_api(monkeypatch)
         course_key,
         str(second.location),
         str(first.location),
-        min_score=0,
-        min_completion=100,
+        min_score=80,
+        min_completion=75,
     )

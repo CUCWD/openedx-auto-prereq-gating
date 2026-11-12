@@ -83,7 +83,7 @@ def test_get_returns_405(platform_api, authenticated_author):
 
 def test_unauthenticated_post_redirects_to_login(platform_api, client):
     """Redirect unauthenticated POST requests to the login page."""
-    response = client.post(setup_url())
+    response = client.post(setup_url(), data="", content_type="application/json")
 
     assert response.status_code == 302
     assert response["Location"].startswith("/login")
@@ -94,7 +94,7 @@ def test_missing_author_access_returns_json_403(platform_api, authenticated_auth
     client, _ = authenticated_author
     platform_api["has_course_author_access"].return_value = False
 
-    response = client.post(setup_url())
+    response = client.post(setup_url(), data="", content_type="application/json")
 
     assert response.status_code == 403
     assert response.json() == {"error": "You do not have author access to this course."}
@@ -119,7 +119,7 @@ def test_gating_disabled_returns_advanced_settings_message(
     setup = Mock(side_effect=ValueError(message))
     monkeypatch.setattr(gating, "setup_sequential_gating", setup)
 
-    response = client.post(setup_url())
+    response = client.post(setup_url(), data="", content_type="application/json")
 
     assert response.status_code == 400
     assert response.json() == {"error": message}
@@ -133,7 +133,7 @@ def test_success_returns_total_and_gated_counts(
     setup = Mock(return_value={"total": 12, "gated": 11})
     monkeypatch.setattr(gating, "setup_sequential_gating", setup)
 
-    response = client.post(setup_url())
+    response = client.post(setup_url(), data="", content_type="application/json")
 
     assert response.status_code == 200
     assert response.json() == {
@@ -141,7 +141,7 @@ def test_success_returns_total_and_gated_counts(
         "total_subsections": 12,
         "gating_configured": 11,
     }
-    setup.assert_called_once_with(COURSE_ID, user)
+    setup.assert_called_once_with(COURSE_ID, user, prereq_min_completion=100, prereq_min_score=0)
 
 
 def test_unexpected_service_error_is_logged_and_returns_json_500(
@@ -154,7 +154,7 @@ def test_unexpected_service_error_is_logged_and_returns_json_500(
     log_exception = Mock()
     monkeypatch.setattr("auto_prereq_gating.views.log.exception", log_exception)
 
-    response = client.post(setup_url())
+    response = client.post(setup_url(), data="", content_type="application/json")
 
     assert response.status_code == 500
     assert response.json() == {
@@ -163,3 +163,22 @@ def test_unexpected_service_error_is_logged_and_returns_json_500(
     log_exception.assert_called_once_with(
         "Unexpected error in auto-gating setup for %s", COURSE_ID
     )
+
+
+@pytest.mark.parametrize("body", ['{"prereqMinScore": -1}', '{"prereqMinCompletion": 101}', '{"prereqMinScore": 1.5}', '{"prereqMinScore": true}', '[]', '{'])
+def test_invalid_thresholds_return_400(platform_api, authenticated_author, monkeypatch, body):
+    client, _ = authenticated_author
+    setup = Mock()
+    monkeypatch.setattr(gating, "setup_sequential_gating", setup)
+    response = client.post(setup_url(), data=body, content_type="application/json")
+    assert response.status_code == 400
+    setup.assert_not_called()
+
+
+def test_custom_thresholds_are_passed_to_service(platform_api, authenticated_author, monkeypatch):
+    client, user = authenticated_author
+    setup = Mock(return_value={"total": 2, "gated": 1})
+    monkeypatch.setattr(gating, "setup_sequential_gating", setup)
+    response = client.post(setup_url(), data='{"prereqMinCompletion": 75, "prereqMinScore": 80}', content_type="application/json")
+    assert response.status_code == 200
+    setup.assert_called_once_with(COURSE_ID, user, prereq_min_completion=75, prereq_min_score=80)

@@ -3,15 +3,19 @@
 from django.db import transaction
 
 
-def setup_sequential_gating(course_key, user):
+def setup_sequential_gating(course_key, user, prereq_min_completion=100, prereq_min_score=0):
     """Wire prerequisite gating across every subsection in course order.
 
-    Each subsection after the first requires 100% completion of its immediate
-    predecessor and a minimum score of 0%. Gating relationships are saved
-    using the platform's milestone-backed gating API.
+    Each subsection after the first requires its immediate predecessor to meet
+    the specified completion and score thresholds, which default to 100% and
+    0%. Relationships are saved using the platform's milestone-backed API.
 
     Returns a mapping with the number of subsections found and gated.
     """
+    for value in (prereq_min_completion, prereq_min_score):
+        if type(value) is not int or not 0 <= value <= 100:  # pylint: disable=unidiomatic-typecheck
+            raise ValueError("Thresholds must be integers between 0 and 100.")
+
     # The caller checks author access before invoking this service.
     del user
     # Import from edx-platform only when this service is called, so the package
@@ -34,7 +38,9 @@ def setup_sequential_gating(course_key, user):
                     "before auto-gating can be configured."
                 )
 
-            total, gated = configure_sequential_prerequisites(course_key, course)
+            total, gated = configure_sequential_prerequisites(
+                course_key, course, prereq_min_completion, prereq_min_score
+            )
     except ItemNotFoundError as error:
         raise ValueError(f"Course not found: {course_key}") from error
 
@@ -56,8 +62,8 @@ def get_ordered_subsections(course):
 
 
 @transaction.atomic
-def configure_sequential_prerequisites(course_key, course):
-    """Gate each subsection on the previous subsection's 100% completion.
+def configure_sequential_prerequisites(course_key, course, prereq_min_completion=100, prereq_min_score=0):
+    """Gate each subsection on the previous subsection's thresholds.
 
     Existing prerequisite requirements on these subsections are replaced by
     the sequential chain. A subsection with no predecessor is left ungated.
@@ -87,8 +93,8 @@ def configure_sequential_prerequisites(course_key, course):
             course_key,
             str(current.location),
             previous_key,
-            min_score=0,
-            min_completion=100,
+            min_score=prereq_min_score,
+            min_completion=prereq_min_completion,
         )
 
     return len(subsections), len(subsections) - 1

@@ -1,7 +1,7 @@
 """Tests for automatic subsection prerequisite configuration."""
 
 # Pytest fixtures are passed as test parameters by design.
-# pylint: disable=redefined-outer-name
+# pylint: disable=redefined-outer-name, no-member
 
 from contextlib import nullcontext
 from types import ModuleType, SimpleNamespace
@@ -108,6 +108,20 @@ def test_gating_must_be_enabled(modulestore_modules):
     store.update_item.assert_not_called()
 
 
+@pytest.mark.parametrize("value", [-1, 101, 1.5, True])
+def test_invalid_service_thresholds_rejected(value):
+    """Reject invalid threshold values before accessing the modulestore."""
+    with pytest.raises(ValueError, match="Thresholds"):
+        setup_sequential_gating("course-v1:org+course+run", None, value)
+
+
+@pytest.mark.django_db
+def test_configure_rejects_disabled_gating():
+    """The configuration service checks the course's advanced setting."""
+    with pytest.raises(ValueError, match="Advanced Settings"):
+        configure_sequential_prerequisites("course-v1:org+course+run", make_course(enabled=False))
+
+
 @pytest.mark.django_db
 def test_single_subsection_rejected(modulestore_modules):
     """A course needs at least two subsections for a chain."""
@@ -154,7 +168,7 @@ def test_configure_sequential_prerequisites_uses_openedx_gating_api(monkeypatch)
     }
     api_module = openedx_modules["openedx.core.lib.gating.api"]
     api_module.add_prerequisite = MagicMock()
-    api_module.is_prerequisite = MagicMock(return_value=False)
+    api_module.is_prerequisite = MagicMock(return_value=True)
     api_module.set_required_content = MagicMock()
     for name, module in openedx_modules.items():
         monkeypatch.setitem(__import__("sys").modules, name, module)
@@ -166,7 +180,7 @@ def test_configure_sequential_prerequisites_uses_openedx_gating_api(monkeypatch)
     assert configure_sequential_prerequisites(course_key, course, 75, 80) == (2, 1)
 
     api_module.set_required_content.assert_any_call(course_key, str(first.location), None)
-    api_module.add_prerequisite.assert_called_once_with(course_key, str(first.location))
+    api_module.add_prerequisite.assert_not_called()
     api_module.set_required_content.assert_any_call(
         course_key,
         str(second.location),
@@ -174,3 +188,35 @@ def test_configure_sequential_prerequisites_uses_openedx_gating_api(monkeypatch)
         min_score=80,
         min_completion=75,
     )
+
+
+@pytest.mark.django_db
+def test_four_subsections_form_chain_across_sections(modulestore_modules, monkeypatch):
+    """Configure every gate in outline order, including across sections."""
+    import sys  # pylint: disable=import-outside-toplevel
+
+    api = ModuleType("openedx.core.lib.gating.api")
+    api.add_prerequisite = MagicMock()
+    api.is_prerequisite = MagicMock(return_value=False)
+    api.set_required_content = MagicMock()
+    for name in ("openedx", "openedx.core", "openedx.core.lib", "openedx.core.lib.gating"):
+        module = ModuleType(name)
+        module.__path__ = []
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setitem(sys.modules, "openedx.core.lib.gating.api", api)
+
+    subsections = [make_subsection(str(i)) for i in range(4)]
+    course = make_course(subsections[:2], [SimpleNamespace(category="other"), *subsections[2:]])
+    store, user = configure_store(modulestore_modules, course)
+    key = "course-v1:org+course+run"
+
+    assert setup_sequential_gating(key, user) == {"total": 4, "gated": 3}
+    assert api.set_required_content.call_count == 4
+    api.set_required_content.assert_any_call(key, str(subsections[0].location), None)
+    for previous, current in zip(subsections, subsections[1:]):
+        api.add_prerequisite.assert_any_call(key, str(previous.location))
+        api.set_required_content.assert_any_call(
+            key, str(current.location), str(previous.location), min_score=0, min_completion=100
+        )
+    assert api.add_prerequisite.call_count == 3
+    store.update_item.assert_not_called()

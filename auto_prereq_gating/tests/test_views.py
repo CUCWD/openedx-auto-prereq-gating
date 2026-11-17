@@ -1,9 +1,10 @@
 """Tests for the CMS REST views."""
 
 # Fixtures are supplied as test parameters by pytest.
-# pylint: disable=redefined-outer-name, unused-argument
+# pylint: disable=redefined-outer-name, unused-argument, no-member
 
 import sys
+from contextlib import nullcontext
 from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock
 
@@ -165,7 +166,10 @@ def test_unexpected_service_error_is_logged_and_returns_json_500(
     )
 
 
-@pytest.mark.parametrize("body", ['{"prereqMinScore": -1}', '{"prereqMinCompletion": 101}', '{"prereqMinScore": 1.5}', '{"prereqMinScore": true}', '[]', '{'])
+@pytest.mark.parametrize("body", [
+    '{"prereqMinScore": -1}', '{"prereqMinCompletion": 101}', '{"prereqMinScore": 1.5}',
+    '{"prereqMinScore": true}', '[]', '{',
+])
 def test_invalid_thresholds_return_400(platform_api, authenticated_author, monkeypatch, body):
     client, _ = authenticated_author
     setup = Mock()
@@ -179,6 +183,75 @@ def test_custom_thresholds_are_passed_to_service(platform_api, authenticated_aut
     client, user = authenticated_author
     setup = Mock(return_value={"total": 2, "gated": 1})
     monkeypatch.setattr(gating, "setup_sequential_gating", setup)
-    response = client.post(setup_url(), data='{"prereqMinCompletion": 75, "prereqMinScore": 80}', content_type="application/json")
+    response = client.post(
+        setup_url(), data='{"prereqMinCompletion": 75, "prereqMinScore": 80}', content_type="application/json"
+    )
     assert response.status_code == 200
     setup.assert_called_once_with(COURSE_ID, user, prereq_min_completion=75, prereq_min_score=80)
+
+
+@pytest.fixture
+def configure_platform(platform_api, monkeypatch):
+    """Provide the platform dependencies used by the configure endpoint."""
+    auth = sys.modules["common.djangoapps.student.auth"]
+    auth.has_studio_write_access = Mock(return_value=True)
+    store = Mock()
+    store.bulk_operations.return_value = nullcontext()
+    store.get_course.return_value = object()
+    django_module = ModuleType("xmodule.modulestore.django")
+    django_module.modulestore = Mock(return_value=store)
+    exceptions = ModuleType("xmodule.modulestore.exceptions")
+    exceptions.ItemNotFoundError = type("ItemNotFoundError", (Exception,), {})
+    for name in ("xmodule", "xmodule.modulestore"):
+        module = ModuleType(name)
+        module.__path__ = []
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setitem(sys.modules, django_module.__name__, django_module)
+    monkeypatch.setitem(sys.modules, exceptions.__name__, exceptions)
+    return auth.has_studio_write_access, store, exceptions.ItemNotFoundError
+
+
+@pytest.mark.parametrize("body", ["{", "[]", "{}", '{"course_key": "bad"}'])
+def test_configure_rejects_invalid_payload(configure_platform, authenticated_author, body):
+    client, _ = authenticated_author
+    response = client.post(reverse("configure"), data=body, content_type="application/json")
+    assert response.status_code == 400
+
+
+def test_configure_success(configure_platform, authenticated_author, monkeypatch):
+    access, store, _ = configure_platform
+    client, user = authenticated_author
+    configure = Mock(return_value=(4, 3))
+    monkeypatch.setattr(gating, "configure_sequential_prerequisites", configure)
+    response = client.post(reverse("configure"), data={"course_key": COURSE_ID}, content_type="application/json")
+    assert response.status_code == 200
+    assert response.json() == {
+        "course_key": COURSE_ID, "subsections_found": 4, "gates_configured": 3, "min_completion": 100,
+    }
+    access.assert_called_once_with(user, COURSE_ID)
+    store.bulk_operations.assert_called_once_with(COURSE_ID)
+    configure.assert_called_once_with(COURSE_ID, store.get_course.return_value)
+
+
+def test_configure_denies_access(configure_platform, authenticated_author):
+    access, _, _ = configure_platform
+    access.return_value = False
+    client, _ = authenticated_author
+    response = client.post(reverse("configure"), data={"course_key": COURSE_ID}, content_type="application/json")
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("missing", [True, False])
+def test_configure_reports_service_errors(configure_platform, authenticated_author, monkeypatch, missing):
+    _, store, not_found = configure_platform
+    client, _ = authenticated_author
+    if missing:
+        store.get_course.side_effect = not_found()
+    else:
+        monkeypatch.setattr(
+            gating, "configure_sequential_prerequisites",
+            Mock(side_effect=gating.GatingConfigurationError("invalid course")),
+        )
+    response = client.post(reverse("configure"), data={"course_key": COURSE_ID}, content_type="application/json")
+    assert response.status_code == (404 if missing else 400)
+    assert response.json()["error"] == ("Course was not found." if missing else "invalid course")

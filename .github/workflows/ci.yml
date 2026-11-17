@@ -8,6 +8,19 @@ on:
       - "**"
 
 jobs:
+  frontend_tests:
+    name: frontend tests (companion repository)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: CUCWD/frontend-plugin-auto-prereq-gating
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci
+      - run: npm test -- --runInBand
+
   run_tests:
     name: tests
     runs-on: ${{ matrix.os }}
@@ -33,6 +46,20 @@ jobs:
         env:
           TOXENV: ${{ matrix.toxenv }}
         run: tox
+
+      - name: Check backend branch coverage
+        if: matrix.toxenv == 'django42'
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          classes = ET.parse('coverage.xml').findall('.//class')
+          for name in ('gating.py', 'views.py'):
+              matches = [item for item in classes if item.get('filename') == name]
+              assert len(matches) == 1, f'Missing coverage for {name}'
+              rate = float(matches[0].get('branch-rate'))
+              assert rate >= 0.9, f'{name} branch coverage is {rate:.1%}'
+              print(f'{name}: {rate:.1%} branch coverage')
+          PY
 
       - name: Run coverage
         if: matrix.python-version == '3.12' && matrix.toxenv == 'django42'

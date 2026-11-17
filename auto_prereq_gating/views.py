@@ -89,8 +89,18 @@ def setup_gating_view(request, course_id):
         )
 
     try:
-        result = setup_sequential_gating(course_key, request.user)
-    except ValueError as error:
+        payload = json.loads(request.body or "{}")
+        if not isinstance(payload, dict):
+            raise ValueError("Expected a JSON object.")
+        completion = payload.get("prereqMinCompletion", 100)
+        score = payload.get("prereqMinScore", 0)
+        for value in (completion, score):
+            if type(value) is not int or not 0 <= value <= 100:  # pylint: disable=unidiomatic-typecheck
+                raise ValueError("Thresholds must be integers between 0 and 100.")
+        result = setup_sequential_gating(
+            course_key, request.user, prereq_min_completion=completion, prereq_min_score=score
+        )
+    except (ValueError, UnicodeDecodeError) as error:
         return JsonResponse({"error": str(error)}, status=400)
     except Exception:  # pylint: disable=broad-exception-caught
         log.exception("Unexpected error in auto-gating setup for %s", course_id)

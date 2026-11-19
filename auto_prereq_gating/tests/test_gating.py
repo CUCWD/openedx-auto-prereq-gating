@@ -220,3 +220,21 @@ def test_four_subsections_form_chain_across_sections(modulestore_modules, monkey
         )
     assert api.add_prerequisite.call_count == 3
     store.update_item.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_remove_prerequisites_clears_requirements_before_markers(monkeypatch):
+    from auto_prereq_gating.gating import remove_subsection_prerequisites
+    import sys
+    import types
+
+    api = types.ModuleType("openedx.core.lib.gating.api")
+    calls = []
+    api.get_required_content = lambda course, key: ("manual", 0, 100) if key.endswith("@b") else (None, None, None)
+    api.set_required_content = lambda course, key, value: calls.append(("clear", key))
+    api.is_prerequisite = lambda course, key: key.endswith("@a")
+    api.remove_prerequisite = lambda key: calls.append(("marker", key))
+    monkeypatch.setitem(sys.modules, "openedx.core.lib.gating.api", api)
+    course = make_course([make_subsection("a"), make_subsection("b")])
+    assert remove_subsection_prerequisites("course", course) == (2, 1)
+    assert [(action, key.split("@")[-1]) for action, key in calls] == [("clear", "b"), ("marker", "a")]

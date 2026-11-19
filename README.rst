@@ -143,3 +143,10 @@ Please do not report security issues in public. Please email security@openedx.or
 .. .. |status-badge| image:: https://img.shields.io/badge/Status-Maintained-brightgreen
 .. .. |status-badge| image:: https://img.shields.io/badge/Status-Deprecated-orange
 .. .. |status-badge| image:: https://img.shields.io/badge/Status-Unsupported-red
+
+Removing prerequisite gating
+----------------------------
+
+Course authors can remove all subsection prerequisites from the gating
+configuration modal. This includes manually configured prerequisites and
+does not change the subsection gating advanced setting.

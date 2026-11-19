@@ -114,3 +114,28 @@ def setup_gating_view(request, course_id):
         "total_subsections": result["total"],
         "gating_configured": result["gated"],
     })
+
+
+@login_required
+@require_POST
+def remove_gating_view(request, course_id):
+    """Remove all subsection prerequisites for an authorized course author."""
+    from common.djangoapps.student.auth import has_course_author_access  # pylint: disable=import-outside-toplevel
+    from opaque_keys import InvalidKeyError  # pylint: disable=import-outside-toplevel
+    from opaque_keys.edx.keys import CourseKey  # pylint: disable=import-outside-toplevel
+    from .gating import remove_all_gating  # pylint: disable=import-outside-toplevel
+
+    try:
+        course_key = CourseKey.from_string(course_id)
+    except InvalidKeyError:
+        return JsonResponse({"error": "Invalid course ID."}, status=400)
+    if not has_course_author_access(request.user, course_key):
+        return JsonResponse({"error": "You do not have author access to this course."}, status=403)
+    try:
+        result = remove_all_gating(course_key, request.user)
+    except ValueError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+    except Exception:  # pylint: disable=broad-exception-caught
+        log.exception("Unexpected error removing gating for %s", course_id)
+        return JsonResponse({"error": "An unexpected error occurred. Check server logs."}, status=500)
+    return JsonResponse({"success": True, "total_subsections": result["total"], "gating_removed": result["removed"]})

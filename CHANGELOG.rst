@@ -24,6 +24,8 @@ Added
 
 * Added an API endpoint that removes subsection prerequisite relationships and
   prerequisite markers from a course.
+* Added service and API tests for successful gating removal, missing courses,
+  invalid course IDs, author access, validation errors, and unexpected errors.
 
 Fixed
 =====
@@ -31,6 +33,8 @@ Fixed
 * Authenticate requests to remove course gating with Open edX's standard JWT,
   OAuth bearer, and Studio session authentication policy so the Authoring MFE
   can call the endpoint.
+* Corrected lazy platform import formatting and lint suppressions so the
+  package passes its CI quality checks.
 
 1.0.0 – 2026-11-20
 ******************

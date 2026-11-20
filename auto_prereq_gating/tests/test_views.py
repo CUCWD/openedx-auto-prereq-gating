@@ -154,6 +154,62 @@ def test_remove_gating_accepts_jwt(
     remove.assert_called_once_with(COURSE_ID, user)
 
 
+def test_remove_gating_rejects_invalid_course_id(platform_api, authenticated_author):
+    """Return a JSON bad request when the removal course key is invalid."""
+    client, _ = authenticated_author
+
+    response = client.post(remove_url("not-a-course-key"))
+
+    assert response.status_code == 400
+    assert response.json() == {"error": "Invalid course ID."}
+
+
+def test_remove_gating_denies_non_author(platform_api, authenticated_author):
+    """Forbid removal when the caller lacks course author access."""
+    client, _ = authenticated_author
+    platform_api["has_course_author_access"].return_value = False
+
+    response = client.post(remove_url())
+
+    assert response.status_code == 403
+    assert response.json() == {"error": "You do not have author access to this course."}
+
+
+def test_remove_gating_returns_service_validation_error(
+    platform_api, authenticated_author, monkeypatch
+):
+    """Return an expected removal service error as a bad request."""
+    client, _ = authenticated_author
+    remove = Mock(side_effect=ValueError("Course not found"))
+    monkeypatch.setattr(gating, "remove_all_gating", remove)
+
+    response = client.post(remove_url())
+
+    assert response.status_code == 400
+    assert response.json() == {"error": "Course not found"}
+
+
+def test_remove_gating_logs_unexpected_error(
+    platform_api, authenticated_author, monkeypatch
+):
+    """Log unexpected removal errors and return a safe JSON response."""
+    client, _ = authenticated_author
+    remove = Mock(side_effect=RuntimeError("unexpected failure"))
+    log_exception = Mock()
+    monkeypatch.setattr(gating, "remove_all_gating", remove)
+    monkeypatch.setattr("auto_prereq_gating.views.log.exception", log_exception)
+
+    response = client.post(remove_url())
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "error": "An unexpected error occurred. Check server logs."
+    }
+    log_exception.assert_called_once_with(
+        "Unexpected error removing gating for %s", COURSE_ID
+    )
+
+
 def test_missing_author_access_returns_json_403(platform_api, authenticated_author):
     """Return a JSON forbidden response when the caller cannot author the course."""
     client, _ = authenticated_author

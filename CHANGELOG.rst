@@ -16,8 +16,34 @@ Unreleased
 
 *
 
+1.0.0 – 2026-11-20
+******************
+
+Added
+=====
+
+* Added CMS endpoints for configuring sequential subsection prerequisites.
+* Added configurable minimum-completion and minimum-score thresholds.
+* Added backend tests for request validation, course authorization, and gating
+  behavior.
+
+Changed
+========
+
+* Authenticate MFE API requests with Open edX's standard JWT, OAuth bearer,
+  and Studio session authentication policy.
+* Consolidated project documentation in ``README.md``.
+
+Fixed
+=====
+
+* Prevent authenticated Authoring MFE requests from being redirected to the
+  LMS OAuth flow and reported by browsers as CORS failures.
+* Validate subsection gating before loading platform APIs and configure gates
+  through the Open edX gating service.
+
 0.2.0 – 2026-10-08
-**********************************************
+******************
 
 Added
 =====

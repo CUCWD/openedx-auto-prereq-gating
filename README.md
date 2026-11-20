@@ -19,6 +19,45 @@ Studio plugin for Open edX Ulmo that adds an **Auto-Setup Prerequisite Gating** 
 
 Enable subsection prerequisites in the course's Advanced Settings before using the button.
 
+## Backend API
+
+The Django app registers its endpoints in Studio under `/auto_prereq_gating/`.
+The Authoring MFE calls them with the JWT supplied by
+`getAuthenticatedHttpClient`. Studio session and OAuth bearer authentication
+are also supported through Open edX's standard `view_auth_classes` policy.
+Every endpoint separately verifies that the authenticated user can modify the
+requested course.
+
+### Configure gating with custom thresholds
+
+```http
+POST /auto_prereq_gating/setup/<course-id>/
+Content-Type: application/json
+
+{
+  "prereqMinCompletion": 100,
+  "prereqMinScore": 0
+}
+```
+
+Both thresholds must be integers between 0 and 100. The endpoint replaces the
+prerequisite requirement on each subsection after the first with a reference
+to the preceding subsection.
+
+### Configure default completion gating
+
+```http
+POST /auto_prereq_gating/configure/
+Content-Type: application/json
+
+{
+  "course_key": "course-v1:example+course+run"
+}
+```
+
+This endpoint applies a 100% minimum-completion requirement. The course must
+have subsection prerequisites enabled in Advanced Settings.
+
 ## Repo layout
 
 These are separate repositories in this workspace:
@@ -80,3 +119,37 @@ tutor local launch
 ```
 
 The plugin patches install pinned backend and frontend Git revisions during image builds. Update those pins when deploying newer changes. See the Tutor plugin's README for its installation details.
+
+## Getting help
+
+Implementation details and API behavior are documented in this README and the
+repository's architecture decision records. For project-specific problems,
+[open an issue](https://github.com/CUCWD/openedx-auto-prereq-gating/issues)
+with the relevant logs and reproduction steps.
+
+Open edX community support is available through the
+[discussion forums](https://discuss.openedx.org), the
+[community Slack workspace](https://openedx.slack.com/), and the broader
+[Open edX support resources](https://openedx.org/getting-help).
+
+## Contributing
+
+Bug fixes, security fixes, maintenance work, and features are welcome. For
+larger changes, open an issue before starting implementation so the approach
+can be discussed with the maintainers. Contributors must follow the
+[Open edX Code of Conduct](https://openedx.org/code-of-conduct/) and the
+[Open edX contribution guidance](https://openedx.org/r/how-to-contribute).
+
+Project ownership and maintainer information is available in
+[`catalog-info.yaml`](catalog-info.yaml) and the corresponding
+[Backstage entry](https://backstage.openedx.org/catalog/default/component/openedx-auto-prereq-gating).
+
+## Security
+
+Do not report security vulnerabilities in public issues. Email
+security@openedx.org instead.
+
+## License
+
+This project is licensed under the GNU Affero General Public License v3.0.
+See [LICENSE.txt](LICENSE.txt) for details.

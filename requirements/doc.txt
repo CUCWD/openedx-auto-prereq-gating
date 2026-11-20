@@ -42,6 +42,8 @@ django==5.2.18
     # via
     #   -c https://raw.githubusercontent.com/edx/edx-lint/master/edx_lint/files/common_constraints.txt
     #   -r requirements/test.txt
+djangorestframework==3.16.1
+    # via -r requirements/test.txt
 doc8==2.0.0
     # via -r requirements/doc.in
 docutils==0.21.2

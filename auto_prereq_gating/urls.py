@@ -2,7 +2,7 @@
 
 from django.urls import path
 
-from .views import configure_gating, setup_gating_view, remove_gating_view
+from .views import configure_gating, remove_gating_view, setup_gating_view
 
 app_name = "auto_prereq_gating"
 

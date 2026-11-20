@@ -80,6 +80,11 @@ def setup_url(course_id=COURSE_ID):
     return reverse("setup_gating", kwargs={"course_id": course_id})
 
 
+def remove_url(course_id=COURSE_ID):
+    """Return the URL for the remove endpoint."""
+    return reverse("remove_gating", kwargs={"course_id": course_id})
+
+
 def test_get_returns_405(platform_api, authenticated_author):
     """Reject GET requests to the POST-only endpoint."""
     client, _ = authenticated_author
@@ -122,6 +127,31 @@ def test_jwt_authenticated_post_is_accepted(
     setup.assert_called_once_with(
         COURSE_ID, user, prereq_min_completion=100, prereq_min_score=0
     )
+
+
+def test_remove_gating_accepts_jwt(
+    platform_api, client, django_user_model, monkeypatch
+):
+    """Authenticate an MFE request to remove gating with its JWT."""
+    user = django_user_model.objects.create_user(username="mfe-removal-author")
+    platform_api["jwt_authenticate"].return_value = (user, "access-token")
+    remove = Mock(return_value={"total": 3, "removed": 2})
+    monkeypatch.setattr(gating, "remove_all_gating", remove)
+
+    response = client.post(
+        remove_url(),
+        data="",
+        content_type="application/json",
+        HTTP_AUTHORIZATION="JWT access-token",
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "total_subsections": 3,
+        "gating_removed": 2,
+    }
+    remove.assert_called_once_with(COURSE_ID, user)
 
 
 def test_missing_author_access_returns_json_403(platform_api, authenticated_author):

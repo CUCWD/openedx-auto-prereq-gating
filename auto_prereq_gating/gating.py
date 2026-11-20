@@ -104,8 +104,8 @@ def remove_all_gating(course_key, user):
     """Remove prerequisite relationships and markers for course subsections."""
     del user
     from xmodule.modulestore import ModuleStoreEnum  # pylint: disable=import-outside-toplevel, import-error
-    from xmodule.modulestore.django import modulestore  # pylint: disable=import-outside-toplevel, import-error
-    from xmodule.modulestore.exceptions import ItemNotFoundError  # pylint: disable=import-outside-toplevel, import-error
+    from xmodule.modulestore.django import modulestore  # pylint: disable=import-outside-toplevel
+    from xmodule.modulestore.exceptions import ItemNotFoundError  # pylint: disable=import-outside-toplevel
 
     store = modulestore()
     try:
@@ -122,8 +122,11 @@ def remove_all_gating(course_key, user):
 @transaction.atomic
 def remove_subsection_prerequisites(course_key, course):
     """Clear requirements before deleting their prerequisite milestones."""
-    from openedx.core.lib.gating.api import (  # pylint: disable=import-outside-toplevel, import-error
-        get_required_content, is_prerequisite, remove_prerequisite, set_required_content,
+    from openedx.core.lib.gating.api import (  # pylint: disable=import-outside-toplevel
+        get_required_content,
+        is_prerequisite,
+        remove_prerequisite,
+        set_required_content,
     )
 
     subsections = get_ordered_subsections(course)

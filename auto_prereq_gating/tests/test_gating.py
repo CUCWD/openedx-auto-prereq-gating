@@ -3,13 +3,18 @@
 # Pytest fixtures are passed as test parameters by design.
 # pylint: disable=redefined-outer-name, no-member
 
+import sys
 from contextlib import nullcontext
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from auto_prereq_gating.gating import configure_sequential_prerequisites, setup_sequential_gating
+from auto_prereq_gating.gating import (
+    configure_sequential_prerequisites,
+    remove_subsection_prerequisites,
+    setup_sequential_gating,
+)
 
 
 @pytest.fixture
@@ -193,8 +198,6 @@ def test_configure_sequential_prerequisites_uses_openedx_gating_api(monkeypatch)
 @pytest.mark.django_db
 def test_four_subsections_form_chain_across_sections(modulestore_modules, monkeypatch):
     """Configure every gate in outline order, including across sections."""
-    import sys  # pylint: disable=import-outside-toplevel
-
     api = ModuleType("openedx.core.lib.gating.api")
     api.add_prerequisite = MagicMock()
     api.is_prerequisite = MagicMock(return_value=False)
@@ -224,11 +227,7 @@ def test_four_subsections_form_chain_across_sections(modulestore_modules, monkey
 
 @pytest.mark.django_db
 def test_remove_prerequisites_clears_requirements_before_markers(monkeypatch):
-    from auto_prereq_gating.gating import remove_subsection_prerequisites
-    import sys
-    import types
-
-    api = types.ModuleType("openedx.core.lib.gating.api")
+    api = ModuleType("openedx.core.lib.gating.api")
     calls = []
     api.get_required_content = lambda course, key: ("manual", 0, 100) if key.endswith("@b") else (None, None, None)
     api.set_required_content = lambda course, key, value: calls.append(("clear", key))

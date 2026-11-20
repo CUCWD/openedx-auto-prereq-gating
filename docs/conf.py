@@ -232,7 +232,7 @@ html_theme_options = {
 # The name for this set of Sphinx documents.
 # "<project> v<release> documentation" by default.
 #
-# html_title = 'openedx-auto-prereq-gating v0.2.0'
+# html_title = 'openedx-auto-prereq-gating v1.0.0'
 
 # A shorter title for the navigation bar.  Default is the same as html_title.
 #

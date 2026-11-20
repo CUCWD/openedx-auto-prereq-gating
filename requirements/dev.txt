@@ -61,6 +61,8 @@ django==5.2.18
     # via
     #   -c https://raw.githubusercontent.com/edx/edx-lint/master/edx_lint/files/common_constraints.txt
     #   edx-i18n-tools
+djangorestframework==3.16.1
+    # via -r requirements/quality.txt
 edx-i18n-tools==2.1.0
     # via -r requirements/dev.in
 edx-lint==6.2.0

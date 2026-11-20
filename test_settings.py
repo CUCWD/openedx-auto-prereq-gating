@@ -7,6 +7,10 @@ Django applications, so these settings will not be used.
 
 from os.path import abspath, dirname, join
 
+from test_utils.platform_stubs import install
+
+install()
+
 
 def root(*args):
     """

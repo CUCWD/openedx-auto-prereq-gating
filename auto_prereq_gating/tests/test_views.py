@@ -12,6 +12,7 @@ import pytest
 from django.urls import reverse
 
 from auto_prereq_gating import gating
+from test_utils import platform_stubs
 
 pytestmark = pytest.mark.django_db
 
@@ -30,6 +31,9 @@ def platform_api(monkeypatch):
     auth = ModuleType("common.djangoapps.student.auth")
     has_course_author_access = Mock(return_value=True)
     auth.has_course_author_access = has_course_author_access
+
+    jwt_authenticate = Mock(return_value=None)
+    monkeypatch.setattr(platform_stubs, "JWT_AUTHENTICATE", jwt_authenticate)
 
     invalid_key_error = type("InvalidKeyError", (Exception,), {})
     opaque_keys = ModuleType("opaque_keys")
@@ -57,7 +61,10 @@ def platform_api(monkeypatch):
     )
     for name, module in modules:
         monkeypatch.setitem(sys.modules, name, module)
-    return {"has_course_author_access": has_course_author_access}
+    return {
+        "has_course_author_access": has_course_author_access,
+        "jwt_authenticate": jwt_authenticate,
+    }
 
 
 @pytest.fixture
@@ -82,12 +89,39 @@ def test_get_returns_405(platform_api, authenticated_author):
     assert response.status_code == 405
 
 
-def test_unauthenticated_post_redirects_to_login(platform_api, client):
-    """Redirect unauthenticated POST requests to the login page."""
+def test_unauthenticated_post_returns_json_401(platform_api, client):
+    """Return a JSON response instead of redirecting API requests to OAuth."""
     response = client.post(setup_url(), data="", content_type="application/json")
 
-    assert response.status_code == 302
-    assert response["Location"].startswith("/login")
+    assert response.status_code == 401
+    assert response.json() == {
+        "error": "Authentication credentials were not provided."
+    }
+
+
+def test_jwt_authenticated_post_is_accepted(
+    platform_api, client, django_user_model, monkeypatch
+):
+    """Authenticate an Authoring MFE request with its JWT bearer token."""
+    user = django_user_model.objects.create_user(username="mfe-author")
+    platform_api["jwt_authenticate"].return_value = (user, "access-token")
+    setup = Mock(return_value={"total": 2, "gated": 1})
+    monkeypatch.setattr(gating, "setup_sequential_gating", setup)
+
+    response = client.post(
+        setup_url(),
+        data="",
+        content_type="application/json",
+        HTTP_AUTHORIZATION="JWT access-token",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["gating_configured"] == 1
+    authenticated_request = platform_api["jwt_authenticate"].call_args.args[0]
+    assert authenticated_request.META["HTTP_AUTHORIZATION"] == "JWT access-token"
+    setup.assert_called_once_with(
+        COURSE_ID, user, prereq_min_completion=100, prereq_min_score=0
+    )
 
 
 def test_missing_author_access_returns_json_403(platform_api, authenticated_author):

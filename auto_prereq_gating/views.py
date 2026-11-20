@@ -3,16 +3,24 @@
 import json
 import logging
 
-from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
-from django.views.decorators.http import require_POST
+from openedx.core.lib.api.view_utils import view_auth_classes  # pylint: disable=import-error
+from rest_framework.decorators import api_view
 
 log = logging.getLogger(__name__)
 
 
-@login_required
-@require_POST
+# The Authoring MFE calls these Studio endpoints with the JWT supplied by
+# ``getAuthenticatedHttpClient``. ``view_auth_classes`` is Open edX's standard
+# API authentication policy: it accepts MFE JWTs, OAuth bearer tokens, and
+# Studio sessions and requires an authenticated user. A Django
+# ``login_required`` view would recognize only the session and redirect a
+# JWT-authenticated MFE request to the interactive LMS OAuth flow. Browsers
+# report that cross-origin XHR redirect as a CORS failure. Course-level access
+# is checked separately inside each endpoint after authentication succeeds.
+@api_view(["POST"])
+@view_auth_classes()
 def configure_gating(request):
     """Configure 100% completion gating across a course's ordered subsections."""
     # pylint: disable=import-outside-toplevel
@@ -65,8 +73,8 @@ def configure_gating(request):
     })
 
 
-@login_required
-@require_POST
+@api_view(["POST"])
+@view_auth_classes()
 def setup_gating_view(request, course_id):
     """Set up sequential prerequisite gating for a course."""
     # pylint: disable=import-outside-toplevel

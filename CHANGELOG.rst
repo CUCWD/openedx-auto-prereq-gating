@@ -16,6 +16,24 @@ Unreleased
 
 *
 
+1.0.2 – 2026-11-20
+******************
+
+Added
+=====
+
+* Added regression coverage for API requests whose data stream has already
+  been consumed by DRF request parsing.
+
+Fixed
+=====
+
+* Read setup and configuration payloads from DRF's parsed request data to
+  prevent ``RawPostDataException`` responses after authentication consumes the
+  raw request stream.
+* Preserve HTTP 400 responses for malformed JSON instead of reporting an
+  unexpected server error.
+
 1.0.1 – 2026-11-20
 ******************
 

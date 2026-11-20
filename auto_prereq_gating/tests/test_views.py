@@ -80,6 +80,11 @@ def setup_url(course_id=COURSE_ID):
     return reverse("setup_gating", kwargs={"course_id": course_id})
 
 
+def remove_url(course_id=COURSE_ID):
+    """Return the URL for the remove endpoint."""
+    return reverse("remove_gating", kwargs={"course_id": course_id})
+
+
 def test_get_returns_405(platform_api, authenticated_author):
     """Reject GET requests to the POST-only endpoint."""
     client, _ = authenticated_author
@@ -121,6 +126,87 @@ def test_jwt_authenticated_post_is_accepted(
     assert authenticated_request.META["HTTP_AUTHORIZATION"] == "JWT access-token"
     setup.assert_called_once_with(
         COURSE_ID, user, prereq_min_completion=100, prereq_min_score=0
+    )
+
+
+def test_remove_gating_accepts_jwt(
+    platform_api, client, django_user_model, monkeypatch
+):
+    """Authenticate an MFE request to remove gating with its JWT."""
+    user = django_user_model.objects.create_user(username="mfe-removal-author")
+    platform_api["jwt_authenticate"].return_value = (user, "access-token")
+    remove = Mock(return_value={"total": 3, "removed": 2})
+    monkeypatch.setattr(gating, "remove_all_gating", remove)
+
+    response = client.post(
+        remove_url(),
+        data="",
+        content_type="application/json",
+        HTTP_AUTHORIZATION="JWT access-token",
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "total_subsections": 3,
+        "gating_removed": 2,
+    }
+    remove.assert_called_once_with(COURSE_ID, user)
+
+
+def test_remove_gating_rejects_invalid_course_id(platform_api, authenticated_author):
+    """Return a JSON bad request when the removal course key is invalid."""
+    client, _ = authenticated_author
+
+    response = client.post(remove_url("not-a-course-key"))
+
+    assert response.status_code == 400
+    assert response.json() == {"error": "Invalid course ID."}
+
+
+def test_remove_gating_denies_non_author(platform_api, authenticated_author):
+    """Forbid removal when the caller lacks course author access."""
+    client, _ = authenticated_author
+    platform_api["has_course_author_access"].return_value = False
+
+    response = client.post(remove_url())
+
+    assert response.status_code == 403
+    assert response.json() == {"error": "You do not have author access to this course."}
+
+
+def test_remove_gating_returns_service_validation_error(
+    platform_api, authenticated_author, monkeypatch
+):
+    """Return an expected removal service error as a bad request."""
+    client, _ = authenticated_author
+    remove = Mock(side_effect=ValueError("Course not found"))
+    monkeypatch.setattr(gating, "remove_all_gating", remove)
+
+    response = client.post(remove_url())
+
+    assert response.status_code == 400
+    assert response.json() == {"error": "Course not found"}
+
+
+def test_remove_gating_logs_unexpected_error(
+    platform_api, authenticated_author, monkeypatch
+):
+    """Log unexpected removal errors and return a safe JSON response."""
+    client, _ = authenticated_author
+    remove = Mock(side_effect=RuntimeError("unexpected failure"))
+    log_exception = Mock()
+    monkeypatch.setattr(gating, "remove_all_gating", remove)
+    monkeypatch.setattr("auto_prereq_gating.views.log.exception", log_exception)
+
+    response = client.post(remove_url())
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "error": "An unexpected error occurred. Check server logs."
+    }
+    log_exception.assert_called_once_with(
+        "Unexpected error removing gating for %s", COURSE_ID
     )
 
 

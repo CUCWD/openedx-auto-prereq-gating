@@ -3,13 +3,19 @@
 # Pytest fixtures are passed as test parameters by design.
 # pylint: disable=redefined-outer-name, no-member
 
+import sys
 from contextlib import nullcontext
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from auto_prereq_gating.gating import configure_sequential_prerequisites, setup_sequential_gating
+from auto_prereq_gating.gating import (
+    configure_sequential_prerequisites,
+    remove_all_gating,
+    remove_subsection_prerequisites,
+    setup_sequential_gating,
+)
 
 
 @pytest.fixture
@@ -193,8 +199,6 @@ def test_configure_sequential_prerequisites_uses_openedx_gating_api(monkeypatch)
 @pytest.mark.django_db
 def test_four_subsections_form_chain_across_sections(modulestore_modules, monkeypatch):
     """Configure every gate in outline order, including across sections."""
-    import sys  # pylint: disable=import-outside-toplevel
-
     api = ModuleType("openedx.core.lib.gating.api")
     api.add_prerequisite = MagicMock()
     api.is_prerequisite = MagicMock(return_value=False)
@@ -220,3 +224,45 @@ def test_four_subsections_form_chain_across_sections(modulestore_modules, monkey
         )
     assert api.add_prerequisite.call_count == 3
     store.update_item.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_remove_prerequisites_clears_requirements_before_markers(monkeypatch):
+    """Clear requirements before removing their prerequisite markers."""
+    api = ModuleType("openedx.core.lib.gating.api")
+    calls = []
+    api.get_required_content = lambda course, key: ("manual", 0, 100) if key.endswith("@b") else (None, None, None)
+    api.set_required_content = lambda course, key, value: calls.append(("clear", key))
+    api.is_prerequisite = lambda course, key: key.endswith("@a")
+    api.remove_prerequisite = lambda key: calls.append(("marker", key))
+    monkeypatch.setitem(sys.modules, "openedx.core.lib.gating.api", api)
+    course = make_course([make_subsection("a"), make_subsection("b")])
+    assert remove_subsection_prerequisites("course", course) == (2, 1)
+    assert [(action, key.split("@")[-1]) for action, key in calls] == [("clear", "b"), ("marker", "a")]
+
+
+def test_remove_all_gating_uses_draft_course(modulestore_modules, monkeypatch):
+    """Load the draft course and return removal totals from the service."""
+    course = make_course([make_subsection("a"), make_subsection("b")])
+    store, user = configure_store(modulestore_modules, course)
+    branch, _, _ = modulestore_modules
+    remove = MagicMock(return_value=(2, 1))
+    monkeypatch.setattr("auto_prereq_gating.gating.remove_subsection_prerequisites", remove)
+    course_key = "course-v1:org+course+run"
+
+    assert remove_all_gating(course_key, user) == {"total": 2, "removed": 1}
+    store.branch_setting.assert_called_once_with(branch, course_key)
+    store.get_course.assert_called_once_with(course_key, depth=2)
+    remove.assert_called_once_with(course_key, course)
+
+
+@pytest.mark.parametrize("raise_not_found", [False, True])
+def test_remove_all_gating_reports_missing_course(modulestore_modules, raise_not_found):
+    """Report missing courses returned or raised by the modulestore."""
+    _, _, exceptions_module = modulestore_modules
+    store, user = configure_store(modulestore_modules, None)
+    if raise_not_found:
+        store.get_course.side_effect = exceptions_module.ItemNotFoundError("missing")
+
+    with pytest.raises(ValueError, match="Course not found"):
+        remove_all_gating("course-v1:org+course+run", user)

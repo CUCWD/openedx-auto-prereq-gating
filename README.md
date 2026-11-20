@@ -132,6 +132,12 @@ Open edX community support is available through the
 [community Slack workspace](https://openedx.slack.com/), and the broader
 [Open edX support resources](https://openedx.org/getting-help).
 
+## Removing prerequisite gating
+
+Course authors can remove all subsection prerequisites from the gating
+configuration modal. This includes manually configured prerequisites and
+does not change the subsection gating advanced setting.
+
 ## Contributing
 
 Bug fixes, security fixes, maintenance work, and features are welcome. For

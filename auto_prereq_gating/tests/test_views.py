@@ -375,3 +375,18 @@ def test_configure_reports_service_errors(configure_platform, authenticated_auth
     response = client.post(reverse("configure"), data={"course_key": COURSE_ID}, content_type="application/json")
     assert response.status_code == (404 if missing else 400)
     assert response.json()["error"] == ("Course was not found." if missing else "invalid course")
+
+
+def test_setup_accepts_data_already_parsed_by_authentication(platform_api, client, django_user_model, monkeypatch):
+    """A JWT authenticator can consume the stream before the view runs."""
+    user = django_user_model.objects.create_user(username="parsed-author")
+    def authenticate(request):
+        assert request.data == {"prereqMinCompletion": 75, "prereqMinScore": 80}
+        return user, "access-token"
+    platform_api["jwt_authenticate"].side_effect = authenticate
+    setup = Mock(return_value={"total": 2, "gated": 1})
+    monkeypatch.setattr(gating, "setup_sequential_gating", setup)
+    response = client.post(setup_url(), data='{"prereqMinCompletion":75,"prereqMinScore":80}',
+                           content_type="application/json", HTTP_AUTHORIZATION="JWT access-token")
+    assert response.status_code == 200
+    setup.assert_called_once_with(COURSE_ID, user, prereq_min_completion=75, prereq_min_score=80)

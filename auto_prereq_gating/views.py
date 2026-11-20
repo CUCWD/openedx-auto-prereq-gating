@@ -1,6 +1,5 @@
 """CMS views for automatic prerequisite gating."""
 
-import json
 import logging
 
 from django.core.exceptions import PermissionDenied
@@ -35,10 +34,7 @@ def configure_gating(request):
 
     from .gating import GatingConfigurationError, configure_sequential_prerequisites
 
-    try:
-        payload = json.loads(request.body)
-    except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
-        return JsonResponse({"error": "Expected a JSON request body."}, status=400)
+    payload = request.data
 
     if not isinstance(payload, dict):
         return JsonResponse({"error": "Expected a JSON object."}, status=400)
@@ -96,8 +92,8 @@ def setup_gating_view(request, course_id):
             status=403,
         )
 
+    payload = request.data
     try:
-        payload = json.loads(request.body or "{}")
         if not isinstance(payload, dict):
             raise ValueError("Expected a JSON object.")
         completion = payload.get("prereqMinCompletion", 100)
@@ -108,7 +104,7 @@ def setup_gating_view(request, course_id):
         result = setup_sequential_gating(
             course_key, request.user, prereq_min_completion=completion, prereq_min_score=score
         )
-    except (ValueError, UnicodeDecodeError) as error:
+    except ValueError as error:
         return JsonResponse({"error": str(error)}, status=400)
     except Exception:  # pylint: disable=broad-exception-caught
         log.exception("Unexpected error in auto-gating setup for %s", course_id)

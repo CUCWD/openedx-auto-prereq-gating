@@ -1,5 +1,6 @@
 """Minimal Open edX API decorator stubs for standalone plugin tests."""
 
+import json
 import sys
 from functools import wraps
 from types import ModuleType
@@ -22,7 +23,7 @@ def install():
     rest_framework = ModuleType("rest_framework")
     rest_framework.__path__ = []
     rest_framework_decorators = ModuleType("rest_framework.decorators")
-    rest_framework_decorators.api_view = require_http_methods
+    rest_framework_decorators.api_view = _api_view
 
     openedx = ModuleType("openedx")
     openedx.__path__ = []
@@ -65,5 +66,28 @@ def _view_auth_classes():
             return view(request, *args, **kwargs)
 
         return authenticated_view
+
+    return decorator
+
+
+def _api_view(methods):
+    """Parse request data before invoking a DRF-style API view."""
+    def decorator(view):
+        @require_http_methods(methods)
+        @wraps(view)
+        def parsed_view(request, *args, **kwargs):
+            if request.content_type == "application/json":
+                try:
+                    request.data = json.loads(request.read() or b"{}")
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    return JsonResponse(
+                        {"error": "Expected a JSON request body."},
+                        status=400,
+                    )
+            else:
+                request.data = request.POST
+            return view(request, *args, **kwargs)
+
+        return parsed_view
 
     return decorator
